@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini Shop - Lambda Discount</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1c2430; --mute:#667085; --line:#e4e7ec;
+          --brand:#e8590c; --ok:#067647; --okbg:#ecfdf3; --err:#b42318; --errbg:#fef3f2; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
+  header { background:var(--ink); color:#fff; padding:18px 24px; }
+  header h1 { margin:0; font-size:20px; }
+  header p { margin:4px 0 0; color:#c9d1dc; font-size:13px; }
+  main { max-width:1100px; margin:24px auto; padding:0 16px; display:grid; grid-template-columns: 1fr 360px; gap:20px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  h2 { font-size:16px; margin:0 0 12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap:12px; }
+  .product { border:1px solid var(--line); border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:6px; }
+  .product .name { font-weight:600; }
+  .product .price { color:var(--mute); font-size:14px; }
+  .qty { display:flex; align-items:center; gap:8px; margin-top:auto; }
+  .qty button { width:30px; height:30px; border-radius:8px; border:1px solid var(--line); background:#fff; font-size:16px; cursor:pointer; }
+  .qty span { min-width:20px; text-align:center; font-weight:600; }
+  label { display:block; font-size:13px; color:var(--mute); margin:10px 0 4px; }
+  select { width:100%; padding:8px; border:1px solid var(--line); border-radius:8px; font-size:14px; background:#fff; }
+  ul.cart { list-style:none; padding:0; margin:12px 0; font-size:14px; }
+  ul.cart li { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed var(--line); }
+  .empty { color:var(--mute); font-size:14px; }
+  button.primary { width:100%; margin-top:8px; padding:11px; border:0; border-radius:10px; background:var(--brand); color:#fff; font-size:15px; font-weight:600; cursor:pointer; }
+  button.primary:disabled { opacity:.6; cursor:wait; }
+  button.ghost { padding:6px 10px; border:1px solid var(--line); background:#fff; border-radius:8px; cursor:pointer; font-size:13px; }
+  .box { margin-top:14px; padding:12px; border-radius:10px; font-size:14px; }
+  .box.ok { background:var(--okbg); border:1px solid #abefc6; }
+  .box.err { background:var(--errbg); border:1px solid #fecdca; color:var(--err); }
+  .box table { width:100%; border-collapse:collapse; margin:8px 0; }
+  .box td { padding:3px 0; }
+  .box td:last-child { text-align:right; }
+  .total td { font-weight:700; font-size:16px; border-top:1px solid #abefc6; padding-top:6px; }
+  .badge { display:inline-block; font-size:12px; background:#fff; border:1px solid var(--line); border-radius:99px; padding:2px 8px; color:var(--mute); }
+  .demo { margin-top:16px; padding:12px; border:1px dashed var(--line); border-radius:10px; background:#fafafa; }
+  .demo small { color:var(--mute); }
+  #warmStatus { font-size:12px; color:var(--mute); margin-left:6px; }
+  table.hist { width:100%; border-collapse:collapse; font-size:13px; }
+  table.hist th, table.hist td { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); }
+  table.hist td:last-child, table.hist th:last-child { text-align:right; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Mini Shop</h1>
+  <p>Order totals and discounts are calculated by an AWS Lambda function</p>
+</header>
+
+<main>
+  <div>
+    <section class="card">
+      <h2>Products</h2>
+      <div id="grid" class="grid"><span class="empty">Loading products...</span></div>
+    </section>
+
+    <section class="card" style="margin-top:20px">
+      <h2>Recent orders</h2>
+      <div id="history"><span class="empty">No orders yet.</span></div>
+    </section>
+  </div>
+
+  <aside>
+    <section class="card">
+      <h2>Your order</h2>
+      <label for="tier">Customer tier</label>
+      <select id="tier">
+        <option value="standard">Standard (0%)</option>
+        <option value="silver">Silver (5%)</option>
+        <option value="gold">Gold (10%)</option>
+      </select>
+      <ul id="cart" class="cart"></ul>
+      <button id="place" class="primary">Place order</button>
+      <div id="result"></div>
+
+      <div id="demo" class="demo" hidden>
+        <strong>Failure tests</strong> <small>(demo mode)</small>
+        <label for="sim">Make the Lambda misbehave</label>
+        <select id="sim">
+          <option value="">None (normal)</option>
+          <option value="crash">Lambda crashes</option>
+          <option value="slow">Lambda is too slow (timeout)</option>
+        </select>
+        <div style="margin-top:10px">
+          <button id="warm" class="ghost">Warm up Lambda</button><span id="warmStatus"></span>
+        </div>
+        <small>Tip: the invalid-input test is the "platinum" tier in the dropdown above.
+        After a timeout test, warm up again.</small>
+      </div>
+    </section>
+  </aside>
+</main>
+
+<script>
+const money = n => "Nu. " + Number(n).toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:2});
+const $ = id => document.getElementById(id);
+let products = [];
+const qty = {};          // product_id -> quantity
+let demo = false;
+
+function el(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "class") e.className = v; else e.setAttribute(k, v);
+  }
+  for (const kid of kids) e.append(kid);
+  return e;
+}
+
+function renderProducts() {
+  const grid = $("grid"); grid.replaceChildren();
+  for (const p of products) {
+    const num = el("span", {}, String(qty[p.id] || 0));
+    const minus = el("button", {type:"button", "aria-label":"remove one"}, "-");
+    const plus  = el("button", {type:"button", "aria-label":"add one"}, "+");
+    minus.onclick = () => { qty[p.id] = Math.max(0, (qty[p.id] || 0) - 1); num.textContent = qty[p.id]; renderCart(); };
+    plus.onclick  = () => { qty[p.id] = (qty[p.id] || 0) + 1; num.textContent = qty[p.id]; renderCart(); };
+    grid.append(el("div", {class:"product"},
+      el("div", {class:"name"}, p.name),
+      el("div", {class:"price"}, money(p.price)),
+      el("div", {class:"qty"}, minus, num, plus)));
+  }
+}
+
+function renderCart() {
+  const cart = $("cart"); cart.replaceChildren();
+  let any = false;
+  for (const p of products) {
+    const q = qty[p.id] || 0;
+    if (q > 0) {
+      any = true;
+      cart.append(el("li", {}, el("span", {}, `${q} x ${p.name}`), el("span", {}, money(p.price * q))));
+    }
+  }
+  if (!any) cart.append(el("li", {class:"empty"}, "Your cart is empty."));
+}
+
+function showError(status, data) {
+  const box = el("div", {class:"box err"},
+    el("strong", {}, "Order failed"),
+    el("div", {}, data.error || "Unexpected error"),
+    el("small", {}, `HTTP ${status}${data.code ? " - " + data.code : ""}`));
+  $("result").replaceChildren(box);
+}
+
+function showReceipt(o) {
+  const rows = o.lines.map(l => el("tr", {}, el("td", {}, `${l.quantity} x ${l.name}`), el("td", {}, money(l.line_total))));
+  const table = el("table", {}, ...rows,
+    el("tr", {}, el("td", {}, "Subtotal"), el("td", {}, money(o.subtotal))),
+    el("tr", {}, el("td", {}, `Discount (${o.discount_percent}%)`), el("td", {}, "- " + money(o.discount_amount))),
+    el("tr", {class:"total"}, el("td", {}, "Total"), el("td", {}, money(o.total))));
+  $("result").replaceChildren(el("div", {class:"box ok"},
+    el("strong", {}, `Order ${o.id} placed`), table,
+    el("span", {class:"badge"}, `Discount calculated by AWS Lambda in ${o.lambda_ms} ms`)));
+}
+
+async function loadHistory() {
+  const r = await fetch("/api/orders"); const list = await r.json();
+  const h = $("history");
+  if (!list.length) { h.replaceChildren(el("span", {class:"empty"}, "No orders yet.")); return; }
+  const head = el("tr", {}, el("th", {}, "Order"), el("th", {}, "Tier"), el("th", {}, "Discount"), el("th", {}, "Total"));
+  const rows = list.map(o => el("tr", {}, el("td", {}, o.id), el("td", {}, o.customer_tier),
+    el("td", {}, money(o.discount_amount)), el("td", {}, money(o.total))));
+  h.replaceChildren(el("table", {class:"hist"}, head, ...rows));
+}
+
+async function placeOrder() {
+  const items = products.filter(p => (qty[p.id] || 0) > 0).map(p => ({product_id: p.id, quantity: qty[p.id]}));
+  const body = { customer_tier: $("tier").value, items, simulate: demo ? $("sim").value : "" };
+  const btn = $("place"); btn.disabled = true; btn.textContent = "Calling Lambda...";
+  try {
+    const r = await fetch("/api/orders", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+    const data = await r.json();
+    r.ok ? showReceipt(data) : showError(r.status, data);
+    loadHistory();
+  } catch (e) {
+    showError(0, {error: "Could not reach the order service.", code: "NETWORK"});
+  } finally {
+    btn.disabled = false; btn.textContent = "Place order";
+  }
+}
+
+async function warmUp() {
+  const s = $("warmStatus"); s.textContent = "warming up (can take a few seconds)...";
+  try {
+    const r = await fetch("/api/warmup", {method:"POST"}); const d = await r.json();
+    s.textContent = r.ok ? `warm (${d.ms} ms)` : `failed: ${d.error}`;
+  } catch (e) { s.textContent = "failed"; }
+}
+
+async function init() {
+  try { demo = (await (await fetch("/api/config")).json()).demo; } catch (e) {}
+  if (demo) {
+    $("demo").hidden = false;
+    const opt = el("option", {value:"platinum"}, "Platinum (invalid tier - demo)");
+    $("tier").append(opt);
+    $("warm").onclick = warmUp;
+    warmUp();
+  }
+  try {
+    const r = await fetch("/api/products");
+    if (!r.ok) throw new Error();
+    products = await r.json();
+    renderProducts();
+  } catch (e) {
+    $("grid").replaceChildren(el("span", {class:"empty"}, "Could not load products. Is the product service running?"));
+  }
+  renderCart(); loadHistory();
+  $("place").onclick = placeOrder;
+}
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: WEB303 Lab 5 - discount calculation Lambda
+
+Resources:
+  DiscountFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: go1.x            # builds a static "bootstrap" binary
+    Properties:
+      FunctionName: DiscountFunction
+      CodeUri: lambda/discount/
+      Handler: bootstrap
+      Runtime: provided.al2023
+      Architectures: [x86_64]
+      Timeout: 5
+      MemorySize: 128
